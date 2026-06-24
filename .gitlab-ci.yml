@@ -1,23 +1,95 @@
-build-job:
-  stage: build
-  script:
-    - echo "Hello, $GITLAB_USER_LOGIN!"
+stages:
+  - lint
+  - kyverno-test
+  - kyverno-validate
+  - dry-run
+  - deploy
 
-test-job1:
-  stage: test
-  script:
-    - echo "This job tests something"
+variables:
+  KYVERNO_VERSION: "v1.12.0"
+  K8S_MANIFESTS_DIR: "apps/online-boutique/networkpolicies"
+  KYVERNO_POLICIES_DIR: "policies/kyverno"
 
-test-job2:
-  stage: test
-  script:
-    - echo "This job tests something, but takes more time than test-job1."
-    - echo "After the echo commands complete, it runs the sleep command for 20 seconds"
-    - echo "which simulates a test that runs 20 seconds longer than test-job1"
-    - sleep 20
+.install_kyverno_cli:
+  before_script:
+    - apk add --no-cache curl tar gzip ca-certificates
+    - curl -sSL -o kyverno-cli.tar.gz "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+    - tar -xzf kyverno-cli.tar.gz
+    - chmod +x kyverno
+    - mv kyverno /usr/local/bin/kyverno
+    - kyverno version
 
-deploy-prod:
+lint:kubernetes-yaml:
+  stage: lint
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl apply --dry-run=client -f ${K8S_MANIFESTS_DIR} -o yaml >/dev/null
+    - kubectl apply --dry-run=client -f ${KYVERNO_POLICIES_DIR} -o yaml >/dev/null
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+kyverno:unit-tests:
+  stage: kyverno-test
+  image: alpine:3.20
+  extends: .install_kyverno_cli
+  script:
+    - kyverno test tests/networkpolicies --detailed-results
+    - kyverno test tests/networkpolicies --output-format junit > kyverno-unit-tests.xml
+  artifacts:
+    when: always
+    reports:
+      junit: kyverno-unit-tests.xml
+    paths:
+      - kyverno-unit-tests.xml
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+kyverno:validate-networkpolicies:
+  stage: kyverno-validate
+  image: alpine:3.20
+  extends: .install_kyverno_cli
+  script:
+    - kyverno apply ${KYVERNO_POLICIES_DIR} --resource ${K8S_MANIFESTS_DIR} --detailed-results
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+kubernetes:server-side-dry-run:
+  stage: dry-run
+  image: bitnami/kubectl:latest
+  script:
+    - export KUBECONFIG="${KUBECONFIG_FILE}"
+    - kubectl version --client
+    - kubectl get nodes
+    - kubectl apply --server-side --dry-run=server -f ${KYVERNO_POLICIES_DIR}
+    - kubectl apply --server-side --dry-run=server -f ${K8S_MANIFESTS_DIR}
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+deploy:kyverno-policies:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
-    - echo "This job deploys something from the $CI_COMMIT_BRANCH branch."
-  environment: production
+    - export KUBECONFIG="${KUBECONFIG_FILE}"
+    - kubectl apply -f ${KYVERNO_POLICIES_DIR}
+    - kubectl get cpol networkpolicy-guardrails
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+deploy:networkpolicies:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  needs:
+    - job: kubernetes:server-side-dry-run
+    - job: kyverno:validate-networkpolicies
+  script:
+    - export KUBECONFIG="${KUBECONFIG_FILE}"
+    - kubectl apply -f ${K8S_MANIFESTS_DIR}
+    - kubectl get networkpolicy -A
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
