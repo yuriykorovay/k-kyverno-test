@@ -1,0 +1,59 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: networkpolicy-guardrails
+  annotations:
+    policies.kyverno.io/title: NetworkPolicy Guardrails
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-networkpolicy-ownership-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - NetworkPolicy
+      validate:
+        message: "NetworkPolicy must have labels: owner and change-id."
+        pattern:
+          metadata:
+            labels:
+              owner: "?*"
+              change-id: "?*"
+
+    - name: deny-public-ingress-ipblock
+      match:
+        any:
+          - resources:
+              kinds:
+                - NetworkPolicy
+      validate:
+        message: "Ingress from 0.0.0.0/0 is not allowed in NetworkPolicy."
+        foreach:
+          - list: "request.object.spec.ingress[].from[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.ipBlock.cidr || '' }}"
+                    operator: Equals
+                    value: "0.0.0.0/0"
+
+    - name: deny-public-egress-ipblock
+      match:
+        any:
+          - resources:
+              kinds:
+                - NetworkPolicy
+      validate:
+        message: "Egress to 0.0.0.0/0 is not allowed in NetworkPolicy."
+        foreach:
+          - list: "request.object.spec.egress[].to[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.ipBlock.cidr || '' }}"
+                    operator: Equals
+                    value: "0.0.0.0/0"
