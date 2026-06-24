@@ -1,0 +1,45 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: networkpolicy-guardrails-test
+policies:
+  - ../../policies/kyverno/networkpolicy-guardrails.yaml
+resources:
+  - resources/netpol-good.yaml
+  - resources/netpol-bad-public-ingress.yaml
+  - resources/netpol-bad-missing-labels.yaml
+results:
+  - policy: networkpolicy-guardrails
+    rule: require-networkpolicy-ownership-labels
+    resources:
+      - good-netpol
+    kind: NetworkPolicy
+    result: pass
+
+  - policy: networkpolicy-guardrails
+    rule: deny-public-ingress-ipblock
+    resources:
+      - good-netpol
+    kind: NetworkPolicy
+    result: pass
+
+  - policy: networkpolicy-guardrails
+    rule: deny-public-egress-ipblock
+    resources:
+      - good-netpol
+    kind: NetworkPolicy
+    result: pass
+
+  - policy: networkpolicy-guardrails
+    rule: deny-public-ingress-ipblock
+    resources:
+      - bad-public-ingress
+    kind: NetworkPolicy
+    result: fail
+
+  - policy: networkpolicy-guardrails
+    rule: require-networkpolicy-ownership-labels
+    resources:
+      - bad-missing-labels
+    kind: NetworkPolicy
+    result: fail
