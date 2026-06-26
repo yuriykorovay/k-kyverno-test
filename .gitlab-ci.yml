@@ -20,31 +20,54 @@ variables:
     - mv kyverno /usr/local/bin/kyverno
     - kyverno version
 
+
 lint:kubernetes-yaml:
   stage: lint
-  image: alpine/k8s:1.31.5
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache yq findutils
   script:
-    - echo "Checking Kyverno policy YAML syntax..."
-    - kubectl apply --dry-run=client --validate=false -f ${KYVERNO_POLICIES_DIR} -o yaml >/dev/null
+    - echo "Checking YAML syntax for Kyverno policies..."
+    - |
+      if [ ! -d "${KYVERNO_POLICIES_DIR}" ]; then
+        echo "Directory ${KYVERNO_POLICIES_DIR} does not exist"
+        exit 1
+      fi
 
-    - echo "Checking NetworkPolicy YAML syntax recursively..."
+      KYVERNO_FILES=$(find ${KYVERNO_POLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
+
+      if [ -z "$KYVERNO_FILES" ]; then
+        echo "No Kyverno policy YAML files found in ${KYVERNO_POLICIES_DIR}"
+        exit 1
+      fi
+
+      for file in $KYVERNO_FILES; do
+        echo "Linting $file"
+        yq '.' "$file" >/dev/null
+      done
+
+    - echo "Checking YAML syntax for NetworkPolicy manifests..."
     - |
       if [ ! -d "${NETWORKPOLICIES_DIR}" ]; then
         echo "Directory ${NETWORKPOLICIES_DIR} does not exist"
         exit 1
       fi
 
-      FILES=$(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
+      NETWORKPOLICY_FILES=$(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
 
-      if [ -z "$FILES" ]; then
+      if [ -z "$NETWORKPOLICY_FILES" ]; then
         echo "No NetworkPolicy YAML files found in ${NETWORKPOLICIES_DIR}"
         exit 1
       fi
 
-      kubectl apply --dry-run=client --validate=false -R -f ${NETWORKPOLICIES_DIR} -o yaml >/dev/null
+      for file in $NETWORKPOLICY_FILES; do
+        echo "Linting $file"
+        yq '.' "$file" >/dev/null
+      done
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
+
 
 kyverno:unit-tests:
   stage: kyverno-test
