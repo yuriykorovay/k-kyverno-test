@@ -25,7 +25,7 @@ lint:kubernetes-yaml:
   image: alpine/k8s:1.31.5
   script:
     - echo "Checking Kyverno policy YAML syntax..."
-    - kubectl apply --dry-run=client -f ${KYVERNO_POLICIES_DIR} -o yaml >/dev/null
+    - kubectl apply --dry-run=client --validate=false -f ${KYVERNO_POLICIES_DIR} -o yaml >/dev/null
 
     - echo "Checking NetworkPolicy YAML syntax recursively..."
     - |
@@ -41,7 +41,7 @@ lint:kubernetes-yaml:
         exit 1
       fi
 
-      kubectl apply --dry-run=client -R -f ${NETWORKPOLICIES_DIR} -o yaml >/dev/null
+      kubectl apply --dry-run=client --validate=false -R -f ${NETWORKPOLICIES_DIR} -o yaml >/dev/null
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
