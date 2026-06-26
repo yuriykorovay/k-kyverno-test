@@ -2,17 +2,18 @@ stages:
   - lint
   - kyverno-test
   - kyverno-validate
-  - dry-run
+  - kubernetes-dry-run
   - deploy
 
 variables:
   KYVERNO_VERSION: "v1.12.0"
-  K8S_MANIFESTS_DIR: "apps/online-boutique/networkpolicies"
   KYVERNO_POLICIES_DIR: "policies/kyverno"
+  NETWORKPOLICIES_DIR: "apps/online-boutique/networkpolicies"
 
 .install_kyverno_cli:
   before_script:
-    - apk add --no-cache curl tar gzip ca-certificates
+    - apk add --no-cache curl tar gzip ca-certificates findutils
+    - echo "Installing Kyverno CLI ${KYVERNO_VERSION}..."
     - curl -sSL -o kyverno-cli.tar.gz "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
     - tar -xzf kyverno-cli.tar.gz
     - chmod +x kyverno
@@ -21,10 +22,26 @@ variables:
 
 lint:kubernetes-yaml:
   stage: lint
-  image: bitnami/kubectl:latest
+  image: alpine/k8s:1.31.5
   script:
-    - kubectl apply --dry-run=client -f ${K8S_MANIFESTS_DIR} -o yaml >/dev/null
+    - echo "Checking Kyverno policy YAML syntax..."
     - kubectl apply --dry-run=client -f ${KYVERNO_POLICIES_DIR} -o yaml >/dev/null
+
+    - echo "Checking NetworkPolicy YAML syntax recursively..."
+    - |
+      if [ ! -d "${NETWORKPOLICIES_DIR}" ]; then
+        echo "Directory ${NETWORKPOLICIES_DIR} does not exist"
+        exit 1
+      fi
+
+      FILES=$(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
+
+      if [ -z "$FILES" ]; then
+        echo "No NetworkPolicy YAML files found in ${NETWORKPOLICIES_DIR}"
+        exit 1
+      fi
+
+      kubectl apply --dry-run=client -R -f ${NETWORKPOLICIES_DIR} -o yaml >/dev/null
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -34,7 +51,10 @@ kyverno:unit-tests:
   image: alpine:3.20
   extends: .install_kyverno_cli
   script:
+    - echo "Running Kyverno unit tests..."
     - kyverno test tests/networkpolicies --detailed-results
+
+    - echo "Generating JUnit report..."
     - kyverno test tests/networkpolicies --output-format junit > kyverno-unit-tests.xml
   artifacts:
     when: always
@@ -42,6 +62,7 @@ kyverno:unit-tests:
       junit: kyverno-unit-tests.xml
     paths:
       - kyverno-unit-tests.xml
+    expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -51,45 +72,106 @@ kyverno:validate-networkpolicies:
   image: alpine:3.20
   extends: .install_kyverno_cli
   script:
-    - kyverno apply ${KYVERNO_POLICIES_DIR} --resource ${K8S_MANIFESTS_DIR} --detailed-results
+    - echo "Searching NetworkPolicy YAML files..."
+    - |
+      FILES=$(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
+
+      if [ -z "$FILES" ]; then
+        echo "No NetworkPolicy YAML files found in ${NETWORKPOLICIES_DIR}"
+        exit 1
+      fi
+
+      echo "Found files:"
+      echo "$FILES"
+
+    - echo "Validating NetworkPolicy manifests with Kyverno..."
+    - |
+      for file in $(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \)); do
+        echo "------------------------------------------------------------"
+        echo "Validating file: $file"
+        echo "------------------------------------------------------------"
+        kyverno apply ${KYVERNO_POLICIES_DIR} --resource "$file" --detailed-results
+      done
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
 
-kubernetes:server-side-dry-run:
-  stage: dry-run
-  image: bitnami/kubectl:latest
+kubernetes:server-dry-run:
+  stage: kubernetes-dry-run
+  image: alpine/k8s:1.31.5
   script:
+    - echo "Preparing kubeconfig..."
+    - |
+      if [ -z "$KUBECONFIG_FILE" ]; then
+        echo "KUBECONFIG_FILE variable is not set"
+        echo "Add it in GitLab: Settings > CI/CD > Variables"
+        exit 1
+      fi
+
     - export KUBECONFIG="${KUBECONFIG_FILE}"
+
+    - echo "Checking Kubernetes access..."
     - kubectl version --client
     - kubectl get nodes
-    - kubectl apply --server-side --dry-run=server -f ${KYVERNO_POLICIES_DIR}
-    - kubectl apply --server-side --dry-run=server -f ${K8S_MANIFESTS_DIR}
+
+    - echo "Server dry-run for Kyverno policies..."
+    - kubectl apply --dry-run=server -f ${KYVERNO_POLICIES_DIR}
+
+    - echo "Server dry-run for NetworkPolicies recursively..."
+    - kubectl apply --dry-run=server -R -f ${NETWORKPOLICIES_DIR}
+  needs:
+    - job: lint:kubernetes-yaml
+    - job: kyverno:unit-tests
+    - job: kyverno:validate-networkpolicies
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 deploy:kyverno-policies:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image: alpine/k8s:1.31.5
   script:
+    - echo "Preparing kubeconfig..."
+    - |
+      if [ -z "$KUBECONFIG_FILE" ]; then
+        echo "KUBECONFIG_FILE variable is not set"
+        exit 1
+      fi
+
     - export KUBECONFIG="${KUBECONFIG_FILE}"
+
+    - echo "Deploying Kyverno policies..."
     - kubectl apply -f ${KYVERNO_POLICIES_DIR}
-    - kubectl get cpol networkpolicy-guardrails
+
+    - echo "Current Kyverno ClusterPolicies:"
+    - kubectl get cpol
+  needs:
+    - job: kubernetes:server-dry-run
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
 
 deploy:networkpolicies:
   stage: deploy
-  image: bitnami/kubectl:latest
-  needs:
-    - job: kubernetes:server-side-dry-run
-    - job: kyverno:validate-networkpolicies
+  image: alpine/k8s:1.31.5
   script:
+    - echo "Preparing kubeconfig..."
+    - |
+      if [ -z "$KUBECONFIG_FILE" ]; then
+        echo "KUBECONFIG_FILE variable is not set"
+        exit 1
+      fi
+
     - export KUBECONFIG="${KUBECONFIG_FILE}"
-    - kubectl apply -f ${K8S_MANIFESTS_DIR}
+
+    - echo "Deploying NetworkPolicies recursively..."
+    - kubectl apply -R -f ${NETWORKPOLICIES_DIR}
+
+    - echo "Current NetworkPolicies:"
     - kubectl get networkpolicy -A
+  needs:
+    - job: kubernetes:server-dry-run
+    - job: kyverno:validate-networkpolicies
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
