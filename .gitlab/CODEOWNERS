@@ -1,0 +1,5 @@
+# NetworkPolicy changes must be reviewed
+apps/online-boutique/networkpolicies/*  @YK88
+
+# Kyverno policies
+policies/kyverno/*  @YK88
