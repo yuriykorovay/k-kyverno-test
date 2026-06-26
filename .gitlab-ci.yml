@@ -3,6 +3,7 @@ stages:
   - kyverno-test
   - kyverno-validate
   - kubernetes-dry-run
+  - notify
   - deploy
 
 variables:
@@ -81,6 +82,7 @@ kyverno:unit-tests:
     - if: '$CI_COMMIT_BRANCH'
 
 
+
 kyverno:validate-networkpolicies:
   stage: kyverno-validate
   image: alpine:3.20
@@ -91,24 +93,40 @@ kyverno:validate-networkpolicies:
       FILES=$(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \))
 
       if [ -z "$FILES" ]; then
-        echo "No NetworkPolicy YAML files found in ${NETWORKPOLICIES_DIR}"
+        echo "No NetworkPolicy YAML files found in ${NETWORKPOLICIES_DIR}" | tee kyverno-validation-report.txt
         exit 1
       fi
 
-      echo "Found files:"
-      echo "$FILES"
+      echo "Found files:" | tee kyverno-validation-report.txt
+      echo "$FILES" | tee -a kyverno-validation-report.txt
 
     - echo "Validating NetworkPolicy manifests with Kyverno..."
     - |
+      FAILED=0
+
       for file in $(find ${NETWORKPOLICIES_DIR} -type f \( -name "*.yaml" -o -name "*.yml" \)); do
-        echo "------------------------------------------------------------"
-        echo "Validating file: $file"
-        echo "------------------------------------------------------------"
-        kyverno apply ${KYVERNO_POLICIES_DIR} --resource "$file" --detailed-results
+        echo "------------------------------------------------------------" | tee -a kyverno-validation-report.txt
+        echo "Validating file: $file" | tee -a kyverno-validation-report.txt
+        echo "------------------------------------------------------------" | tee -a kyverno-validation-report.txt
+
+        kyverno apply ${KYVERNO_POLICIES_DIR} --resource "$file" --detailed-results 2>&1 | tee -a kyverno-validation-report.txt || FAILED=1
       done
+
+      if [ "$FAILED" -ne 0 ]; then
+        echo "Kyverno validation failed." | tee -a kyverno-validation-report.txt
+        exit 1
+      fi
+
+      echo "Kyverno validation passed." | tee -a kyverno-validation-report.txt
+  artifacts:
+    when: always
+    paths:
+      - kyverno-validation-report.txt
+    expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
+
 
 kubernetes:server-dry-run:
   stage: kubernetes-dry-run
@@ -140,6 +158,84 @@ kubernetes:server-dry-run:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+
+notify:teams-success:
+  stage: notify
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl jq
+  script:
+    - |
+      REPORT=$(cat kyverno-validation-report.txt 2>/dev/null | tail -n 40 || echo "No report found")
+
+      MESSAGE=$(jq -n \
+        --arg status "PASSED" \
+        --arg project "$CI_PROJECT_PATH" \
+        --arg branch "$CI_COMMIT_BRANCH" \
+        --arg commit "$CI_COMMIT_SHORT_SHA" \
+        --arg pipeline "$CI_PIPELINE_URL" \
+        --arg report "$REPORT" \
+        '{
+          status: $status,
+          title: "Kyverno NetworkPolicy validation PASSED",
+          project: $project,
+          branch: $branch,
+          commit: $commit,
+          pipeline: $pipeline,
+          report: $report
+        }'
+      )
+
+      curl -sS -X POST "$TEAMS_WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        -d "$MESSAGE"
+  needs:
+    - job: kyverno:validate-networkpolicies
+      artifacts: true
+  when: on_success
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+notify:teams-failure:
+  stage: notify
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache curl jq
+  script:
+    - |
+      REPORT=$(cat kyverno-validation-report.txt 2>/dev/null | tail -n 40 || echo "No report found")
+
+      MESSAGE=$(jq -n \
+        --arg status "FAILED" \
+        --arg project "$CI_PROJECT_PATH" \
+        --arg branch "$CI_COMMIT_BRANCH" \
+        --arg commit "$CI_COMMIT_SHORT_SHA" \
+        --arg pipeline "$CI_PIPELINE_URL" \
+        --arg report "$REPORT" \
+        '{
+          status: $status,
+          title: "Kyverno NetworkPolicy validation FAILED",
+          project: $project,
+          branch: $branch,
+          commit: $commit,
+          pipeline: $pipeline,
+          report: $report
+        }'
+      )
+
+      curl -sS -X POST "$TEAMS_WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        -d "$MESSAGE"
+  needs:
+    - job: kyverno:validate-networkpolicies
+      artifacts: true
+      optional: true
+  when: on_failure
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
 
 deploy:kyverno-policies:
   stage: deploy
