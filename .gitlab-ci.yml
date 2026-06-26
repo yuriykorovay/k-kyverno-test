@@ -76,19 +76,10 @@ kyverno:unit-tests:
   script:
     - echo "Running Kyverno unit tests..."
     - kyverno test tests/networkpolicies --detailed-results
-
-    - echo "Generating JUnit report..."
-    - kyverno test tests/networkpolicies --output-format junit > kyverno-unit-tests.xml
-  artifacts:
-    when: always
-    reports:
-      junit: kyverno-unit-tests.xml
-    paths:
-      - kyverno-unit-tests.xml
-    expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
+
 
 kyverno:validate-networkpolicies:
   stage: kyverno-validate
