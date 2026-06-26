@@ -237,51 +237,15 @@ notify:teams-failure:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
 
-deploy:kyverno-policies:
+approval:manual:
   stage: deploy
-  image: alpine/k8s:1.31.5
   script:
-    - echo "Preparing kubeconfig..."
-    - |
-      if [ -z "$KUBECONFIG_FILE" ]; then
-        echo "KUBECONFIG_FILE variable is not set"
-        exit 1
-      fi
+    - echo "Manual approval required before deploy"
+  when: manual
+  allow_failure: false
 
-    - export KUBECONFIG="${KUBECONFIG_FILE}"
-
-    - echo "Deploying Kyverno policies..."
-    - kubectl apply -f ${KYVERNO_POLICIES_DIR}
-
-    - echo "Current Kyverno ClusterPolicies:"
-    - kubectl get cpol
-  needs:
-    - job: kubernetes:server-dry-run
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      when: manual
 
 deploy:networkpolicies:
   stage: deploy
-  image: alpine/k8s:1.31.5
-  script:
-    - echo "Preparing kubeconfig..."
-    - |
-      if [ -z "$KUBECONFIG_FILE" ]; then
-        echo "KUBECONFIG_FILE variable is not set"
-        exit 1
-      fi
-
-    - export KUBECONFIG="${KUBECONFIG_FILE}"
-
-    - echo "Deploying NetworkPolicies recursively..."
-    - kubectl apply -R -f ${NETWORKPOLICIES_DIR}
-
-    - echo "Current NetworkPolicies:"
-    - kubectl get networkpolicy -A
   needs:
-    - job: kubernetes:server-dry-run
-    - job: kyverno:validate-networkpolicies
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      when: manual
+    - approval:manual
