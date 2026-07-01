@@ -186,7 +186,14 @@ notify:teams-success:
           report: $report
         }'
       )
+    - |
+      echo "Webhook length: ${#TEAMS_WEBHOOK_URL}"
 
+      if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+        echo "TEAMS_WEBHOOK_URL is empty"
+        exit 1
+      fi
+      
       curl -sS -X POST "$TEAMS_WEBHOOK_URL" \
         -H "Content-Type: application/json" \
         -d "$MESSAGE"
