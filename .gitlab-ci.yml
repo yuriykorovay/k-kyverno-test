@@ -255,4 +255,4 @@ approval:manual:
 deploy:networkpolicies:
   stage: deploy
   needs:
-    -job: approval:manual
+    - job: approval:manual
