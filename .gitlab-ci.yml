@@ -254,5 +254,21 @@ approval:manual:
 
 deploy:networkpolicies:
   stage: deploy
+  image: alpine/k8s:1.31.5
   needs:
-    - approval:manual
+    - job: approval:manual
+  script:
+    - |
+      if [ -z "$KUBECONFIG_FILE" ]; then
+        echo "KUBECONFIG_FILE variable is not set"
+        exit 1
+      fi
+
+    - export KUBECONFIG="${KUBECONFIG_FILE}"
+
+    - echo "Deploying NetworkPolicies..."
+    - kubectl apply -R -f ${NETWORKPOLICIES_DIR}
+
+    - echo "Current NetworkPolicies:"
+    - kubectl get networkpolicy -A
+  when: manual
