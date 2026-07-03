@@ -125,12 +125,17 @@ kyverno:validate-networkpolicies:
 
         cat kyverno-current-output.txt | tee -a kyverno-validation-report.txt
 
-        if [ "$KYVERNO_EXIT_CODE" -ne 0 ]; then
+        FAIL_COUNT=$(grep -Eo 'fail: [0-9]+' kyverno-current-output.txt | awk '{sum += $2} END {print sum+0}')
+        ERROR_COUNT=$(grep -Eo 'error: [0-9]+' kyverno-current-output.txt | awk '{sum += $2} END {print sum+0}')
+
+        echo "" | tee -a kyverno-validation-report.txt
+        echo "Detected fail count: ${FAIL_COUNT}" | tee -a kyverno-validation-report.txt
+        echo "Detected error count: ${ERROR_COUNT}" | tee -a kyverno-validation-report.txt
+
+        if [ "$KYVERNO_EXIT_CODE" -ne 0 ] || [ "$FAIL_COUNT" -gt 0 ] || [ "$ERROR_COUNT" -gt 0 ]; then
           FAILED=1
-          echo "" | tee -a kyverno-validation-report.txt
           echo "RESULT: FAILED for file $file" | tee -a kyverno-validation-report.txt
         else
-          echo "" | tee -a kyverno-validation-report.txt
           echo "RESULT: PASSED for file $file" | tee -a kyverno-validation-report.txt
         fi
       done
