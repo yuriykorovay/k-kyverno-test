@@ -3,6 +3,10 @@ kind: NetworkPolicy
 metadata:
   name: allow-frontend-to-productcatalog
   namespace: frontend
+  labels:
+    owner: netsec
+    change-id: CHG-0001
+
 spec:
   podSelector:
     matchLabels:
