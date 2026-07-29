@@ -1,0 +1,23 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: calico-require-change-id-test
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: require-change-id
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "Calico policy must include annotation security.company.com/change-id."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/change-id\" || '' }}"
+                operator: Equals
+                value: ""
