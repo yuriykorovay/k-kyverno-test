@@ -1,0 +1,109 @@
+#require-change-id
+#require-owner
+#require-business-justification
+#require-risk-level
+#require-security-approval-for-high-risk
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: calico-networkpolicy-governance
+spec:
+  validationFailureAction: Enforce
+  background: true
+
+  rules:
+
+    - name: require-change-id
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "Calico policy must include annotation security.company.com/change-id."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/change-id\" || '' }}"
+                operator: Equals
+                value: ""
+
+    - name: require-owner
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "Calico policy must include annotation security.company.com/owner."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/owner\" || '' }}"
+                operator: Equals
+                value: ""
+
+    - name: require-business-justification
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "Calico policy must include annotation security.company.com/business-justification."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/business-justification\" || '' }}"
+                operator: Equals
+                value: ""
+
+    - name: require-risk-level
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "Risk level must be one of: Low, Medium, High, Critical."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/risk-level\" || '' }}"
+                operator: Equals
+                value: ""
+
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/risk-level\" || '' }}"
+                operator: NotIn
+                value:
+                  - Low
+                  - Medium
+                  - High
+                  - Critical
+
+    - name: require-security-approval-for-high-risk
+      match:
+        any:
+          - resources:
+              kinds:
+                - projectcalico.org/v3/NetworkPolicy
+                - projectcalico.org/v3/GlobalNetworkPolicy
+      validate:
+        message: "High and Critical risk policies require annotation security.company.com/security-approval."
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/risk-level\" || '' }}"
+                operator: In
+                value:
+                  - High
+                  - Critical
+
+              - key: "{{ request.object.metadata.annotations.\"security.company.com/security-approval\" || '' }}"
+                operator: Equals
+                value: ""
