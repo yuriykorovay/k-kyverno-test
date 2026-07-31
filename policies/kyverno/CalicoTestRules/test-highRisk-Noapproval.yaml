@@ -1,0 +1,14 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: test-high-risk-no-approval
+  namespace: default
+  annotations:
+    security.company.com/change-id: CHG12345
+    security.company.com/owner: devops-team-a
+    security.company.com/business-justification: Payment service access
+    security.company.com/risk-level: High
+spec:
+  selector: app == "frontend"
+  types:
+    - Egress
