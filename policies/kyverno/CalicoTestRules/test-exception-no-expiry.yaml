@@ -1,0 +1,15 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: test-exception-no-expiry
+  namespace: default
+  annotations:
+    security.company.com/change-id: CHG12345
+    security.company.com/owner: devops-team-a
+    security.company.com/business-justification: Temporary firewall exception
+    security.company.com/risk-level: Medium
+
+    security.company.com/exception: "true"
+
+spec:
+  selector: all()
