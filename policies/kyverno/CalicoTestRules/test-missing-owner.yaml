@@ -1,0 +1,21 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: test-missing-change-id
+  namespace: default
+  annotations:
+    # security.company.com/owner: devops-team-a
+    security.company.com/business-justification: Allow frontend to backend traffic.
+    security.company.com/risk-level: Low
+    security.company.com/change-id: NetPol0001
+spec:
+  selector: app == "frontend"
+  types:
+    - Egress
+  egress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: app == "backend"
+        ports:
+          - 8080
