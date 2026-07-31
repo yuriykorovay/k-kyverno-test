@@ -1,7 +1,7 @@
 apiVersion: projectcalico.org/v3
 kind: NetworkPolicy
 metadata:
-  name: test-missing-change-id
+  name: missing-justification
   namespace: default
   annotations:
     security.company.com/owner: devops-team-a
