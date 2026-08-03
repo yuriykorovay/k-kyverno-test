@@ -1,0 +1,12 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: egress-all-namespaces
+  namespace: default
+spec:
+  selector: app == 'frontend'
+
+  egress:
+    - action: Allow
+      destination:
+        namespaceSelector: all()
