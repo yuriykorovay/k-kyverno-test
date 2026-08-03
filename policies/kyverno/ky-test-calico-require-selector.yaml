@@ -1,0 +1,25 @@
+apiVersion: policies.kyverno.io/v1alpha1
+kind: ValidatingPolicy
+metadata:
+  name: calico-require-selector
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: "has(object.spec.selector)"
+      message: >
+        Warning: NetworkPolicy does not contain spec.selector.
+        Explicit workload selection is recommended.
