@@ -1,0 +1,12 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: ingress-all-namespaces
+  namespace: default
+spec:
+  selector: app == 'backend'
+
+  ingress:
+    - action: Allow
+      source:
+        namespaceSelector: all()
