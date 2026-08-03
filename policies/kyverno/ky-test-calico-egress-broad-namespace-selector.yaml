@@ -1,0 +1,30 @@
+apiVersion: policies.kyverno.io/v1alpha1
+kind: ValidatingPolicy
+metadata:
+  name: calico-egress-broad-namespace-selector
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: >
+        !has(object.spec.egress) ||
+        object.spec.egress.all(e,
+          !has(e.destination.namespaceSelector) ||
+          e.destination.namespaceSelector != 'all()'
+        )
+      message: >
+        Warning: Egress rule contains namespaceSelector 'all()'.
+        This allows communication to all namespaces.
