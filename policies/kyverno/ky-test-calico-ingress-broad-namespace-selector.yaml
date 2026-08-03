@@ -1,0 +1,30 @@
+apiVersion: policies.kyverno.io/v1alpha1
+kind: ValidatingPolicy
+metadata:
+  name: calico-ingress-broad-namespace-selector
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: >
+        !has(object.spec.ingress) ||
+        object.spec.ingress.all(i,
+          !has(i.source.namespaceSelector) ||
+          i.source.namespaceSelector != 'all()'
+        )
+      message: >
+        Warning: Ingress rule contains namespaceSelector 'all()'.
+        This allows traffic from all namespaces.
