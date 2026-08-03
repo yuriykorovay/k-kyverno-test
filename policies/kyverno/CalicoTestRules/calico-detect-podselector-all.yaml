@@ -1,0 +1,26 @@
+apiVersion: policies.kyverno.io/v1alpha1
+kind: ValidatingPolicy
+metadata:
+  name: calico-detect-podselector-all
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: "object.spec.selector != 'all()'"
+      message: >
+        Warning: Calico NetworkPolicy uses selector 'all()',
+        which selects all workload endpoints in the namespace
+        and may be overly permissive.
