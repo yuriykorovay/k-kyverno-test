@@ -1,0 +1,32 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: calico-internet-egress-approval
+
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: >
+        !object.spec.egress.exists(e,
+          has(e.destination) &&
+          has(e.destination.nets) &&
+          e.destination.nets.exists(n,
+            n == '0.0.0.0/0'
+          )
+        )
+      message: >
+        Egress to 0.0.0.0/0 detected.
