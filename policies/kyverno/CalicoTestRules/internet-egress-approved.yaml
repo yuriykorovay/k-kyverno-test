@@ -1,0 +1,19 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: internet-egress-approved
+  namespace: default
+  annotations:
+    approval.playtech.com/internet-egress-approved: "true"
+
+spec:
+  selector: app == "frontend"
+
+  types:
+    - Egress
+
+  egress:
+    - action: Allow
+      destination:
+        nets:
+          - 0.0.0.0/0
