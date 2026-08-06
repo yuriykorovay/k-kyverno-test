@@ -1,0 +1,45 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: sensitive-namespace-internet-egress
+spec:
+  validationActions:
+    - Warn
+
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - projectcalico.org
+        apiVersions:
+          - v3
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - networkpolicies
+
+  validations:
+    - expression: >
+        !(
+          object.metadata.namespace in [
+            'payments',
+            'pci',
+            'prod',
+            'vault',
+            'identity',
+            'secrets'
+          ]
+          &&
+          has(object.spec.egress)
+          &&
+          object.spec.egress.exists(e,
+            has(e.destination) &&
+            has(e.destination.nets) &&
+            e.destination.nets.exists(n,
+              n == '0.0.0.0/0'
+            )
+          )
+        )
+      message: >-
+        Internet egress (0.0.0.0/0) detected from a sensitive namespace.
+        Security approval or exception is required.
