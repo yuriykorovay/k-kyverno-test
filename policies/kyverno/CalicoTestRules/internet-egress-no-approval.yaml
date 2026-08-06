@@ -1,0 +1,16 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: internet-egress-no-approval
+  namespace: default
+spec:
+  selector: app == "frontend"
+
+  types:
+    - Egress
+
+  egress:
+    - action: Allow
+      destination:
+        nets:
+          - 0.0.0.0/0
